@@ -313,13 +313,15 @@ public class Ram extends Mem {
 
     // perform reads
     BitWidth width = state.getAttributeValue(DATA_ATTR);
+    boolean misaligned = addr % dataLines != 0;
+    boolean misalignError = misaligned && !state.getAttributeValue(ALLOW_MISALIGNED);
     boolean outputEnabled = separate || !state.getPortValue(RamAppearance.getOEIndex(0, attrs)).equals(Value.FALSE);
-    if (outputEnabled && goodAddr && (addr % dataLines == 0)) {
+    if (outputEnabled && goodAddr && !misalignError) {
       for (int i = 0; i < dataLines; i++) {
         long val = myState.getContents().get(addr+i);
         state.setPort(RamAppearance.getDataOutIndex(i, attrs), Value.createKnown(width, val), DELAY);
       }
-    } else if (outputEnabled && (errorValue || (goodAddr && (addr % dataLines != 0)))) {
+    } else if (outputEnabled && (errorValue || (goodAddr && misalignError))) {
       for (int i = 0; i < dataLines; i++)
         state.setPort(RamAppearance.getDataOutIndex(i, attrs), Value.createError(width), DELAY);
     } else {
