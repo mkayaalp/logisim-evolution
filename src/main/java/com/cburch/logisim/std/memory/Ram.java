@@ -294,12 +294,14 @@ public class Ram extends Mem {
     boolean separate = isSeparate(attrs);
 
     int dataLines = Math.max(1, RamAppearance.getNrLEPorts(attrs));
+    boolean misaligned = addr % dataLines != 0;
+    boolean misalignError = misaligned && !state.getAttributeValue(ALLOW_MISALIGNED);
 
     // perform writes
     Object trigger = state.getAttributeValue(StdAttr.TRIGGER);
     boolean triggered = myState.setClock(state.getPortValue(RamAppearance.getClkIndex(0, attrs)), trigger);
     boolean writeEnabled = triggered && (state.getPortValue(RamAppearance.getWEIndex(0, attrs)) == Value.TRUE);
-    if (writeEnabled && goodAddr && (addr % dataLines == 0)) {
+    if (writeEnabled && goodAddr && !misalignError) {
       for (int i = 0; i < dataLines; i++) {
         if (dataLines > 1) {
           Value le = state.getPortValue(RamAppearance.getLEIndex(i, attrs));
@@ -313,8 +315,6 @@ public class Ram extends Mem {
 
     // perform reads
     BitWidth width = state.getAttributeValue(DATA_ATTR);
-    boolean misaligned = addr % dataLines != 0;
-    boolean misalignError = misaligned && !state.getAttributeValue(ALLOW_MISALIGNED);
     boolean outputEnabled = separate || !state.getPortValue(RamAppearance.getOEIndex(0, attrs)).equals(Value.FALSE);
     if (outputEnabled && goodAddr && !misalignError) {
       for (int i = 0; i < dataLines; i++) {
