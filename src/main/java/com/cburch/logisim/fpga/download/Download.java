@@ -30,13 +30,13 @@ package com.cburch.logisim.fpga.download;
 
 import static com.cburch.logisim.fpga.Strings.S;
 
+import com.cburch.logisim.Main;
 import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.fpga.fpgaboardeditor.BoardInformation;
 import com.cburch.logisim.fpga.fpgagui.ComponentMapDialog;
 import com.cburch.logisim.fpga.fpgagui.ComponentMapParser;
 import com.cburch.logisim.fpga.fpgagui.FPGACommanderBase;
 import com.cburch.logisim.fpga.fpgagui.FPGAReport;
-import com.cburch.logisim.fpga.gui.DownloadProgressBar;
 import com.cburch.logisim.fpga.settings.VendorSoftware;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.proj.Project;
@@ -53,16 +53,17 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.JOptionPane;
+import javax.swing.JProgressBar;
 
 public class Download extends FPGACommanderBase implements Runnable, WindowListener {
 
   private boolean StopRequested = false;
 
-  private boolean DownloadBitstream;
   private boolean DownloadOnly;
+  private boolean HdlOnly;
   private char Vendor;
   private boolean UseGui;
-  private DownloadProgressBar MyGui;
+  private JProgressBar MyProgress;
   private VendorDownload Downloader;
   private String TopLevelSheet;
   private double TickFrequency;
@@ -77,6 +78,22 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
   private ArrayList<ActionListener> Listeners = new ArrayList<ActionListener>();
 
   public Download(
+	      Project MyProject,
+	      String TopLevelSheet,
+	      double TickFrequency,
+	      FPGAReport MyReporter,
+	      BoardInformation MyBoardInformation,
+	      String MapFileName,
+	      boolean writeToFlash,
+	      boolean DownloadOnly,
+	      boolean gegerateHdlOnly,
+	      JProgressBar Progress) {
+    MyProgress = Progress;
+    SetUpDownload(MyProject, TopLevelSheet, TickFrequency, MyReporter,
+       MyBoardInformation, MapFileName, writeToFlash, DownloadOnly,gegerateHdlOnly);  
+  }
+
+  public Download(
       Project MyProject,
       String TopLevelSheet,
       double TickFrequency,
@@ -85,19 +102,32 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
       String MapFileName,
       boolean writeToFlash,
       boolean DownloadOnly,
-      boolean UseGui) {
+      boolean gegerateHdlOnly) {
+    SetUpDownload(MyProject, TopLevelSheet, TickFrequency, MyReporter,
+        MyBoardInformation, MapFileName, writeToFlash, DownloadOnly,gegerateHdlOnly);  
+  }
+  
+  private void SetUpDownload(
+      Project MyProject,
+      String TopLevelSheet,
+      double TickFrequency,
+      FPGAReport MyReporter,
+      BoardInformation MyBoardInformation,
+      String MapFileName,
+      boolean writeToFlash,
+      boolean DownloadOnly,
+      boolean gegerateHdlOnly) {
     this.MyProject = MyProject;
     this.MyReporter = MyReporter;
     this.MyBoardInformation = MyBoardInformation;
-    this.DownloadBitstream = AppPreferences.DownloadToBoard.get();
     this.DownloadOnly = DownloadOnly;
     this.Vendor = MyBoardInformation.fpga.getVendor();
-    this.UseGui = UseGui;
+    this.UseGui = !Main.headless;
     this.TopLevelSheet = TopLevelSheet;
     this.TickFrequency = TickFrequency;
     this.MapFileName = MapFileName;
+    this.HdlOnly = gegerateHdlOnly;
     Circuit RootSheet = MyProject.getLogisimFile().getCircuit(TopLevelSheet);
-    String Title = S.fmt("DownloadingInfo", VendorSoftware.getVendorString(Vendor));
     int steps = BasicSteps;
     switch (Vendor) {
       case VendorSoftware.VendorAltera:
@@ -138,16 +168,21 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
         MyReporter.AddFatalError("BUG: Tried to Download to an unknown target");
         return;
     }
+    if (MyProgress == null) UseGui = false;
     if (UseGui) {
       if (Downloader != null) steps += Downloader.GetNumberOfStages();
-      MyGui = new DownloadProgressBar(Title, steps);
-      MyGui.addWindowListener(this);
-      MyGui.SetStatus(S.get("FpgaDownloadInfo"));
+      MyProgress.setMaximum(steps);
+      MyProgress.setString(S.get("FpgaDownloadInfo"));
     }
   }
 
   public void DoDownload() {
     new Thread(this).start();
+  }
+  
+  public void stop() {
+    StopRequested = true;
+    MyProgress.setString(S.get("FpgaGuiCanceling"));
   }
 
   public boolean CreateDownloadScripts() {
@@ -171,7 +206,7 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
 
   @Override
   public void run() {
-    if (PrepareDownLoad() && VendorSoftwarePresent() && AppPreferences.DownloadToBoard.get()) {
+    if (PrepareDownLoad() && VendorSoftwarePresent() && !HdlOnly) {
       try {
         String error = download();
         if (error != null) MyReporter.AddFatalError(error);
@@ -182,17 +217,13 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
         MyReporter.AddError(S.fmt("FPGAInterruptedError", VendorSoftware.getVendorString(Vendor)));
       }
     }
-    if (UseGui) {
-      MyGui.setVisible(false);
-      MyGui.dispose();
-    }
     fireEvent(new ActionEvent(this, 1, "DownloadDone"));
   }
 
   public boolean runtty() {
     if (!PrepareDownLoad()) return false;
+    if (HdlOnly) return true;
     if (!VendorSoftwarePresent()) return true;
-    if (!AppPreferences.DownloadToBoard.get()) return true;
     try {
       String error = download();
       if (error != null) {
@@ -214,21 +245,22 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
     MyReporter.ClsScr();
     if (!DownloadOnly || !Downloader.readyForDownload()) {
       for (int stages = 0; stages < Downloader.GetNumberOfStages(); stages++) {
-        if (StopRequested) return "Interrupted";
+        if (StopRequested) return S.get("FPGAInterrupted");
         ProcessBuilder CurrentStage = Downloader.PerformStep(stages);
         if (CurrentStage != null) {
           String result = execute(Downloader.GetStageMessage(stages), CurrentStage);
           if (result != null) return result;
         }
-        if (UseGui) MyGui.SetProgress(stages + BasicSteps);
+        if (UseGui) MyProgress.setValue(stages + BasicSteps);
       }
     }
-    if (UseGui) MyGui.SetProgress(Downloader.GetNumberOfStages() + BasicSteps - 1);
-    if (!DownloadBitstream) return null;
+    if (UseGui) MyProgress.setValue(Downloader.GetNumberOfStages() + BasicSteps - 1);
+    if (HdlOnly) return null;
+    if (StopRequested) return S.get("FPGAInterrupted");
     Object[] options = {S.get("FPGADownloadOk"), S.get("FPGADownloadCancel")};
     if (UseGui)
       if (JOptionPane.showOptionDialog(
-              MyGui,
+              null,
               S.get("FPGAVerifyMsg1"),
               S.get("FPGAVerifyMsg2"),
               JOptionPane.YES_NO_OPTION,
@@ -239,7 +271,6 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
           != JOptionPane.YES_OPTION) {
         return S.get("FPGADownloadAborted");
       }
-    if (StopRequested) return "Interrupted";
     if (!Downloader.BoardConnected()) return S.get("FPGABoardNotConnected");
     ProcessBuilder DownloadBitfile = Downloader.DownloadToBoard();
     if (DownloadBitfile != null) return execute(S.get("FPGADownloadBitfile"), DownloadBitfile);
@@ -267,7 +298,7 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
 
   private String execute(String StageName, ProcessBuilder process)
       throws IOException, InterruptedException {
-    if (UseGui) MyGui.SetStatus(StageName);
+    if (UseGui) MyProgress.setString(StageName);
     MyReporter.print(" ");
     MyReporter.print("==>");
     MyReporter.print("==> " + StageName);
@@ -292,13 +323,9 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
   }
 
   private boolean PrepareDownLoad() {
-    if (!AppPreferences.DownloadToBoard.get() && DownloadOnly) {
-      MyReporter.AddError(S.get("FPGASettingSkipGenerateInvalid"));
-      return false;
-    }
-    if (DownloadOnly) return true;
+    if (DownloadOnly && Downloader.readyForDownload()) return true;
     /* Stage 0 DRC */
-    if (UseGui) MyGui.SetStatus(S.get("FPGAState0"));
+    if (UseGui) MyProgress.setString(S.get("FPGAState0"));
     if (!performDRC(TopLevelSheet, AppPreferences.HDL_Type.get())) {
       return false;
     }
@@ -307,18 +334,10 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
       MyReporter.AddFatalError(S.fmt("FPGANameContainsSpaces", Name));
       return false;
     }
-    /* Is this test really required...... */
-    //		if (MyProject.getLogisimFile().getLoader().getMainFile() != null) {
-    //			String Dir = MyProject.getLogisimFile().getLoader().getMainFile().toString();
-    //			if (Dir.contains(" ")) {
-    //				MyReporter.AddFatalError(S.fmt("FPGADirContainsSpaces", Dir));
-    //				return false;
-    //			}
-    //		}
     /* Stage 1 Is design map able on Board */
     if (UseGui) {
-      MyGui.SetProgress(1);
-      MyGui.SetStatus(S.get("FPGAState2"));
+      MyProgress.setValue(1);
+      MyProgress.setString(S.get("FPGAState2"));
     }
     if (!MapDesign(TopLevelSheet)) {
       return false;
@@ -333,8 +352,8 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
         MapPannel = new ComponentMapDialog(null, "");
       }
       /* Stage 2 Map design on board */
-      MyGui.SetProgress(2);
-      MyGui.SetStatus(S.get("FPGAState3"));
+      MyProgress.setValue(2);
+      MyProgress.setString(S.get("FPGAState3"));
       MapPannel.SetBoardInformation(MyBoardInformation);
       MapPannel.SetMappebleComponents(MyMappableResources);
       if (!MapPannel.run()) {
@@ -348,7 +367,7 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
         ComponentMapParser cmp =
             new ComponentMapParser(MapFile, MyMappableResources, MyBoardInformation);
         cmp.parseFile();
-      } else return false;
+      }
     }
     if (!MapDesignCheckIOs()) {
       MyReporter.AddError(S.fmt("FPGAMapNotComplete", MyBoardInformation.getBoardName()));
@@ -356,8 +375,8 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
     }
     /* Stage 3 HDL generation */
     if (UseGui) {
-      MyGui.SetProgress(3);
-      MyGui.SetStatus(S.get("FPGAState1"));
+      MyProgress.setValue(3);
+      MyProgress.setString(S.get("FPGAState1"));
     }
     if (TickFrequency <= 0) TickFrequency = 1;
     if (TickFrequency > (MyBoardInformation.fpga.getClockFrequency() / 4))
@@ -369,8 +388,8 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
     String SourcePath = ProjectPath + AppPreferences.HDL_Type.get().toLowerCase() + File.separator;
     GetVHDLFiles(ProjectPath, SourcePath, Entities, Architectures, AppPreferences.HDL_Type.get());
     if (UseGui) {
-      MyGui.SetProgress(4);
-      MyGui.SetStatus(S.get("FPGAState4"));
+      MyProgress.setValue(4);
+      MyProgress.setString(S.get("FPGAState4"));
     }
     Downloader.SetMapableResources(MyMappableResources);
     /* Stage 4 Create Download Scripts */
@@ -382,7 +401,7 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
 
   @Override
   public void windowClosing(WindowEvent e) {
-    MyGui.SetStatus(S.get("FPGACancelWait"));
+	MyProgress.setString(S.get("FPGACancelWait"));
     StopRequested = true;
     synchronized (lock) {
       if (Executable != null) {
@@ -439,4 +458,5 @@ public class Download extends FPGACommanderBase implements Runnable, WindowListe
       return null;
     }
   }
+
 }

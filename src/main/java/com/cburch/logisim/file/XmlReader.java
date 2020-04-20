@@ -34,12 +34,14 @@ import com.cburch.draw.model.AbstractCanvasObject;
 import com.cburch.logisim.LogisimVersion;
 import com.cburch.logisim.Main;
 import com.cburch.logisim.circuit.Circuit;
+import com.cburch.logisim.circuit.CircuitMapInfo;
 import com.cburch.logisim.circuit.appear.AppearanceSvgReader;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.data.Attribute;
 import com.cburch.logisim.data.AttributeDefaultProvider;
 import com.cburch.logisim.data.AttributeSet;
 import com.cburch.logisim.data.Location;
+import com.cburch.logisim.fpga.fpgaboardeditor.BoardRectangle;
 import com.cburch.logisim.instance.Instance;
 import com.cburch.logisim.instance.StdAttr;
 import com.cburch.logisim.prefs.AppPreferences;
@@ -285,6 +287,38 @@ class XmlReader {
       }
       return known;
     }
+    
+    void loadMap(Element board, String boardName, Circuit circ) {
+      HashMap<String,CircuitMapInfo> map = new HashMap<String,CircuitMapInfo>();
+      for (Element cmap : XmlIterator.forChildElements(board, "mc")) {
+        int x,y,w,h;
+        String key = cmap.getAttribute("key");
+        if (key == null || key.isEmpty()) continue;
+        if (cmap.hasAttribute("open")) {
+          map.put(key, new CircuitMapInfo());
+        } else if (cmap.hasAttribute("vconst")) {
+          Long v;
+          try {
+            v = Long.parseLong(cmap.getAttribute("vconst"));
+          } catch (NumberFormatException e) {
+            continue;
+          }
+          map.put(key, new CircuitMapInfo(v));
+        } else {
+          try {
+            x = Integer.parseUnsignedInt(cmap.getAttribute("valx"));
+            y = Integer.parseUnsignedInt(cmap.getAttribute("valy"));
+            w = Integer.parseUnsignedInt(cmap.getAttribute("valw"));
+            h = Integer.parseUnsignedInt(cmap.getAttribute("valh"));
+          } catch (NumberFormatException e) {
+            continue;
+          }
+          BoardRectangle br = new BoardRectangle(x,y,w,h);
+          map.put(key, new CircuitMapInfo(br));
+        }
+      }
+      if (!map.isEmpty()) circ.addLoadedMap(boardName, map);
+    }
 
     void loadAppearance(Element appearElt, XmlReader.CircuitData circData, String context) {
       Map<Location, Instance> pins = new HashMap<Location, Instance>();
@@ -419,6 +453,11 @@ class XmlReader {
             circData.knownComponents = loadKnownComponents(circElt, HolyCrossFile, IsEvolutionFile);
             for (Element appearElt : XmlIterator.forChildElements(circElt, "appear")) {
               loadAppearance(appearElt, circData, name + ".appear");
+            }
+            for (Element boardMap :  XmlIterator.forChildElements(circElt, "boardmap")) {
+              String BoardName = boardMap.getAttribute("boardname");
+              if (BoardName == null || BoardName.isEmpty()) continue;
+              loadMap(boardMap,BoardName,circData.circuit);
             }
             circuitsData.add(circData);
           default:

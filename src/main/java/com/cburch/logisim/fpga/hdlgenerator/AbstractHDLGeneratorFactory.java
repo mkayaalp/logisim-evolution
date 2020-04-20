@@ -38,6 +38,7 @@ import com.cburch.logisim.fpga.designrulecheck.NetlistComponent;
 import com.cburch.logisim.fpga.fpgaboardeditor.FPGAIOInformationContainer;
 import com.cburch.logisim.fpga.fpgagui.FPGAReport;
 import com.cburch.logisim.fpga.fpgagui.MappableResourcesContainer;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -577,12 +578,12 @@ public class AbstractHDLGeneratorFactory implements HDLGeneratorFactory {
       Long ComponentId,
       NetlistComponent ComponentInfo,
       FPGAReport Reporter,
-      String CircuitName,
+      String Name,
       String HDLType) {
     ArrayList<String> Contents = new ArrayList<String>();
     Map<String, Integer> ParameterMap = GetParameterMap(Nets, ComponentInfo, Reporter);
     Map<String, String> PortMap = GetPortMap(Nets, ComponentInfo, Reporter, HDLType);
-    String CompName =
+    String CompName = (Name != null && !Name.isEmpty()) ? Name :
         (ComponentInfo == null)
             ? this.getComponentStringIdentifier()
             : ComponentInfo.GetComponent()
@@ -806,6 +807,7 @@ public class AbstractHDLGeneratorFactory implements HDLGeneratorFactory {
       int InputId = MapInfo.GetFPGAInputPinId(map);
       int OutputId = MapInfo.GetFPGAOutputPinId(map);
       int NrOfPins = MapInfo.GetNrOfPins(map);
+      Long ConstValue = MapInfo.GetConstantValue(map);
       boolean Invert = MapInfo.RequiresToplevelInversion(ComponentIdentifier, map);
       for (int PinId = 0; PinId < NrOfPins; PinId++) {
         Temp.setLength(0);
@@ -822,6 +824,23 @@ public class AbstractHDLGeneratorFactory implements HDLGeneratorFactory {
           }
           Temp.append(HDLGeneratorFactory.FPGAInputPinName);
           Temp.append("_" + Integer.toString(InputId + PinId) + ";");
+          Contents.add(Temp.toString());
+        }
+        Temp.setLength(0);
+        Temp.append("   " + Preamble);
+        if (ConstValue != null && ((BubbleInfo.GetInputStartIndex() + BubbleOffset)
+                <= BubbleInfo.GetInputEndIndex())) {
+          Temp.append("s_" + HDLGeneratorFactory.LocalInputBubbleBusname + OpenBracket);
+          Temp.append(BubbleInfo.GetInputStartIndex() + BubbleOffset);
+          BubbleOffset++;
+          Temp.append(CloseBracket + AssignOperator);
+          long mask = 1L << PinId;
+          if ((ConstValue&mask) == 0) {
+            Temp.append((HDLType.equals(VHDL)) ? "'0'" : "1'b0");  
+          } else {
+            Temp.append((HDLType.equals(VHDL)) ? "'1'" : "1'b1");
+          }
+          Temp.append(";");
           Contents.add(Temp.toString());
         }
         Temp.setLength(0);

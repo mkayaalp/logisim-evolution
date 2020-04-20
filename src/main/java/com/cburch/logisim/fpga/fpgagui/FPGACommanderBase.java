@@ -74,14 +74,13 @@ public abstract class FPGACommanderBase {
         VendorSoftware.GetToolPath(MyBoardInformation.fpga.getVendor()));
   }
 
-  protected boolean GenerateHDLOnlySelected() {
-    return !AppPreferences.DownloadToBoard.get();
-  }
-
   protected boolean MapDesign(String CircuitName) {
     LogisimFile myfile = MyProject.getLogisimFile();
     Circuit RootSheet = myfile.getCircuit(CircuitName);
-    Netlist RootNetlist = RootSheet.getNetList();
+    if (RootSheet == null) {
+      MyReporter.AddError("INTERNAL ERROR: Circuit not found ?!?");
+      return false;
+    }
     if (MyBoardInformation == null) {
       MyReporter.AddError("INTERNAL ERROR: No board information available ?!?");
       return false;
@@ -100,7 +99,11 @@ public abstract class FPGACommanderBase {
      * mapped to PCB components. Identification can be done by a hierarchy
      * name plus component/sub-circuit name
      */
-    MyMappableResources = new MappableResourcesContainer(MyBoardInformation, RootNetlist);
+    MyMappableResources = RootSheet.getBoardMap(MyBoardInformation.getBoardName());
+    if (MyMappableResources == null) 
+      MyMappableResources = new MappableResourcesContainer(MyBoardInformation, RootSheet);
+    else
+      MyMappableResources.rebuildMappedLists();
     if (!MyMappableResources.IsMappable(BoardComponents, MyReporter)) {
       return false;
     }

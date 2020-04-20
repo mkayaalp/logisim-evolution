@@ -52,6 +52,22 @@ public class BoardInformation {
     MyComponents.add(comp);
   }
 
+  public void ReplaceComponent(FPGAIOInformationContainer orig,
+    FPGAIOInformationContainer repl) {
+    int index = MyComponents.indexOf(orig);
+    if (index < 0) return;
+    MyComponents.remove(index);
+    MyComponents.add(index, repl);
+  }
+  
+  public void deleteComponent(FPGAIOInformationContainer comp) {
+    if (MyComponents.contains(comp)) {
+      MyComponents.remove(comp);
+      for (FPGAIOInformationContainer c : MyComponents)
+        c.SetId(MyComponents.indexOf(c));
+    }
+  }
+
   public void clear() {
     MyComponents.clear();
     boardname = null;

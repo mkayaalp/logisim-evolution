@@ -26,6 +26,32 @@
  *     http://www.heig-vd.ch/
  */
 
-package com.cburch.logisim.fpga.fpgagui;
+package com.cburch.logisim.circuit;
 
-public class FPGAReportNoGui extends FPGAReport {}
+import com.cburch.logisim.fpga.fpgaboardeditor.BoardRectangle;
+
+public class CircuitMapInfo {
+
+    private BoardRectangle rect;
+    private Long constValue;
+    
+    public CircuitMapInfo() {
+      rect = null;
+      constValue = null;
+    }
+    
+    public CircuitMapInfo(BoardRectangle rect) {
+      this.rect = rect;
+      constValue = null;
+    }
+    
+    public CircuitMapInfo(Long val) {
+      this.rect = null;
+      constValue = val;
+    }
+    
+    public BoardRectangle getRectangle() { return rect; }
+    public Long getConstValue() { return constValue; }
+    public boolean isOpen() { return rect==null && constValue == null; }
+    public boolean isConst() { return rect==null && constValue != null; }
+}

@@ -87,6 +87,12 @@ public class PreferencesFrame extends LFrame {
     JFrame frame = MENU_MANAGER.getJFrame(true, null);
     frame.setVisible(true);
   }
+  
+  public static void showFPGAPreferences() {
+	PreferencesFrame frame = (PreferencesFrame) MENU_MANAGER.getJFrame(true, null);
+	frame.setFpgaTab();
+    frame.setVisible(true);
+  }
 
   private static final long serialVersionUID = 1L;
 
@@ -104,9 +110,10 @@ public class PreferencesFrame extends LFrame {
           new IntlOptions(this),
           new WindowOptions(this),
           new LayoutOptions(this),
+          new SimOptions(this),
           new ExperimentalOptions(this),
           new SoftwaresOptions(this),
-          new FPGAOptions(this),
+          new FPGAOptions(this), // Should be last as setFpgaTab depends on it
         };
     tabbedPane = new JTabbedPane();
     int intlIndex = -1;
@@ -128,5 +135,9 @@ public class PreferencesFrame extends LFrame {
     LocaleManager.addLocaleListener(myListener);
     myListener.localeChanged();
     pack();
+  }
+  
+  public void setFpgaTab() {
+    tabbedPane.setSelectedIndex(tabbedPane.getTabCount()-1);
   }
 }
